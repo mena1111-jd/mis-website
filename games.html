@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Games – Jimena's Webpage</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #fff0f5;
+      font-family: 'Segoe UI', sans-serif;
+      color: #6d2a4a;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ── */
+    .site-nav {
+      background: #e8538a;
+      padding: 12px 20px;
+      display: flex;
+      gap: 8px;
+    }
+    .site-nav .nav-link {
+      color: white;
+      text-decoration: none;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: background 0.2s;
+    }
+    .site-nav .nav-link:hover { background: rgba(255,255,255,0.25); }
+    .site-nav .nav-link.active { background: rgba(255,255,255,0.3); }
+
+    h1 {
+      text-align: center;
+      font-size: 2.2rem;
+      margin: 24px 0 4px;
+      color: #e8538a;
+      letter-spacing: 1px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #b06080;
+      margin-bottom: 20px;
+      font-size: 0.95rem;
+    }
+
+    #game-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 40px;
+    }
+
+    #score-board {
+      display: flex;
+      gap: 40px;
+      font-size: 1.1rem;
+      background: rgba(232,83,138,0.1);
+      padding: 10px 30px;
+      border-radius: 12px;
+      border: 1px solid rgba(232,83,138,0.3);
+      color: #6d2a4a;
+    }
+    #score-board span { color: #e8538a; font-weight: 700; font-size: 1.3rem; }
+
+    canvas {
+      border: 3px solid #e8538a;
+      border-radius: 12px;
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    #controls-hint {
+      color: #b06080;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    #controls-hint kbd {
+      background: rgba(232,83,138,0.12);
+      border: 1px solid rgba(232,83,138,0.3);
+      border-radius: 5px;
+      padding: 2px 7px;
+      font-size: 0.85rem;
+      color: #c0446e;
+    }
+
+    #dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 56px);
+      grid-template-rows: repeat(3, 56px);
+      gap: 4px;
+      margin-top: 4px;
+    }
+    #dpad button {
+      background: rgba(232,83,138,0.15);
+      border: 2px solid rgba(232,83,138,0.4);
+      border-radius: 10px;
+      color: #e8538a;
+      font-size: 1.4rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #dpad button:active { background: #e8538a; color: white; }
+    #dpad .empty { visibility: hidden; }
+  </style>
+</head>
+<body>
+
+  <nav class="site-nav">
+    <a href="index.html" class="nav-link">Home</a>
+    <a href="games.html" class="nav-link active">Games</a>
+  </nav>
+
+  <h1>Crossy Road</h1>
+  <p class="subtitle">Help the chicken cross the road (without becoming dinner)</p>
+
+  <div id="game-wrapper">
+    <div id="score-board">
+      Score: <span id="score">0</span> &nbsp;&nbsp; Best: <span id="best">0</span>
+    </div>
+    <canvas id="gameCanvas" width="480" height="520"></canvas>
+    <div id="controls-hint">
+      <kbd>Up</kbd> <kbd>Down</kbd> <kbd>Left</kbd> <kbd>Right</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+      &nbsp;-- Tap buttons below on mobile
+    </div>
+    <div id="dpad">
+      <div class="empty"></div>
+      <button id="btn-up">&#9650;</button>
+      <div class="empty"></div>
+      <button id="btn-left">&#9664;</button>
+      <div class="empty"></div>
+      <button id="btn-right">&#9654;</button>
+      <div class="empty"></div>
+      <button id="btn-down">&#9660;</button>
+      <div class="empty"></div>
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const TILE = 40;
+const COLS = W / TILE;
+const ROWS = H / TILE;
+
+const COLORS = {
+  safe:     '#f9c8d8',
+  safeDark: '#e8a0b8',
+  road:     '#d4a0b5',
+  roadLine: '#f0c0d4',
+  water:    '#f48fb1',
+  log:      '#c97fa0',
+  logGrain: 'rgba(255,255,255,0.2)',
+  car1:     '#e8538a',
+  car2:     '#c2185b',
+  car3:     '#f06292',
+  chicken:  '#ffffff',
+  comb:     '#e8538a',
+  wing:     '#f4c0d4',
+};
+
+const ROW_TYPES = ['safe','safe','road','road','road','water','water','road','road','water','road','safe','safe'];
+
+function makeRow(type, y) {
+  const row = { type, y, items: [] };
+  if (type === 'road') {
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const speed = 1.5 + Math.random() * 2.5;
+    const count = 2 + Math.floor(Math.random() * 3);
+    const gap = Math.floor(COLS / count);
+    for (let i = 0; i < count; i++) {
+      row.items.push({ x: (i * gap + Math.floor(Math.random() * gap)) * TILE, w: TILE * (1 + Math.floor(Math.random() * 2)), speed: speed * dir });
+    }
+  }
+  if (type === 'water') {
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const speed = 1 + Math.random() * 1.5;
+    const count = 2 + Math.floor(Math.random() * 3);
+    const gap = Math.floor(COLS / count);
+    for (let i = 0; i < count; i++) {
+      row.items.push({ x: (i * gap + Math.floor(Math.random() * gap)) * TILE, w: TILE * (2 + Math.floor(Math.random() * 3)), speed: speed * dir });
+    }
+  }
+  return row;
+}
+
+let world = [], worldTopY = 0;
+
+function initWorld() {
+  world = []; worldTopY = 0;
+  for (let r = 0; r < ROWS + 6; r++) {
+    world.push(makeRow(r < ROW_TYPES.length ? ROW_TYPES[r] : randomRowType(), -r));
+  }
+  worldTopY = -(ROWS + 5);
+}
+
+function randomRowType() {
+  const p = Math.random();
+  return p < 0.4 ? 'road' : p < 0.6 ? 'water' : 'safe';
+}
+
+function extendWorld() {
+  while (worldTopY > player.worldY - ROWS) {
+    worldTopY--;
+    world.unshift(makeRow(randomRowType(), worldTopY));
+  }
+}
+
+const START_Y = 0;
+let player = {};
+function resetPlayer() {
+  player = { worldY: START_Y, col: Math.floor(COLS/2), moving: false, animT: 0,
+             prevCol: Math.floor(COLS/2), prevWorldY: START_Y, onLog: null };
+}
+
+function getCamTarget() { return player.worldY + 3; }
+let camSmooth = 3;
+
+let score = 0, best = 0, maxWorldY = START_Y;
+function updateScore() {
+  if (player.worldY < maxWorldY) {
+    maxWorldY = player.worldY;
+    score = START_Y - maxWorldY;
+    if (score > best) best = score;
+    document.getElementById('score').textContent = score;
+    document.getElementById('best').textContent = best;
+  }
+}
+
+let state = 'playing', deathTimer = 0;
+
+function restartGame() {
+  initWorld(); resetPlayer();
+  camSmooth = getCamTarget(); score = 0; maxWorldY = START_Y;
+  document.getElementById('score').textContent = '0';
+  state = 'playing';
+}
+
+function getRow(y) { return world.find(r => r.y === y); }
+
+document.addEventListener('keydown', e => {
+  if (state === 'dead') { restartGame(); return; }
+  if (player.moving) return;
+  const map = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right',
+                w:'up', s:'down', a:'left', d:'right', W:'up', S:'down', A:'left', D:'right' };
+  const dir = map[e.key];
+  if (dir) { e.preventDefault(); move(dir); }
+});
+
+function bindBtn(id, dir) {
+  const el = document.getElementById(id);
+  ['touchstart','mousedown'].forEach(ev => {
+    el.addEventListener(ev, e => {
+      e.preventDefault();
+      if (state === 'dead') { restartGame(); return; }
+      if (!player.moving) move(dir);
+    });
+  });
+}
+bindBtn('btn-up','up'); bindBtn('btn-down','down');
+bindBtn('btn-left','left'); bindBtn('btn-right','right');
+
+function move(dir) {
+  let nc = player.col, ny = player.worldY;
+  if (dir === 'up')    ny--;
+  if (dir === 'down')  ny++;
+  if (dir === 'left')  nc--;
+  if (dir === 'right') nc++;
+  nc = Math.max(0, Math.min(COLS-1, nc));
+  if (ny > START_Y + 2) return;
+  player.prevCol = player.col; player.prevWorldY = player.worldY;
+  player.col = nc; player.worldY = ny;
+  player.moving = true; player.animT = 0; player.onLog = null;
+  extendWorld(); updateScore();
+}
+
+function checkCollision() {
+  const row = getRow(player.worldY); if (!row) return;
+  const px = player.col * TILE + TILE/2;
+  if (row.type === 'road') {
+    for (const car of row.items) {
+      if (px > car.x + 4 && px < car.x + car.w - 4) { die(); return; }
+    }
+  }
+  if (row.type === 'water') {
+    let safe = false;
+    for (const log of row.items) {
+      if (px >= log.x + 2 && px <= log.x + log.w - 2) { safe = true; player.onLog = log; break; }
+    }
+    if (!safe) die();
+  }
+}
+
+function die() { if (state === 'dead') return; state = 'dead'; deathTimer = 0; }
+
+let last = 0;
+function update(ts) {
+  const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+  if (state === 'dead') { deathTimer += dt; draw(); requestAnimationFrame(update); return; }
+
+  for (const row of world) {
+    for (const item of row.items) {
+      item.x += item.speed * dt * 60;
+      if (item.speed > 0 && item.x > W + 10)       item.x = -item.w - 10;
+      if (item.speed < 0 && item.x < -item.w - 10) item.x = W + 10;
+    }
+  }
+
+  if (player.moving) {
+    player.animT += dt * 8;
+    if (player.animT >= 1) { player.animT = 1; player.moving = false; checkCollision(); }
+  }
+
+  if (!player.moving && player.onLog) {
+    const row = getRow(player.worldY);
+    if (row && row.type === 'water') {
+      const dx = player.onLog.speed * dt * 60;
+      player.col = Math.round((player.onLog.x + player.onLog.w/2)/TILE - 0.5 + dx/TILE);
+      player.col = Math.max(0, Math.min(COLS-1, player.col));
+      const px = player.col * TILE + TILE/2;
+      if (!(px >= player.onLog.x + 2 && px <= player.onLog.x + player.onLog.w - 2)) die();
+    } else { player.onLog = null; }
+  }
+
+  camSmooth += (getCamTarget() - camSmooth) * dt * 8;
+  draw(); requestAnimationFrame(update);
+}
+
+function worldToScreen(y) { return (camSmooth - y) * TILE; }
+
+function draw() {
+  ctx.fillStyle = '#fff8fa';
+  ctx.fillRect(0, 0, W, H);
+
+  for (const row of world) {
+    const sy = worldToScreen(row.y);
+    if (sy < -TILE || sy > H + TILE) continue;
+
+    if (row.type === 'safe') {
+      ctx.fillStyle = COLORS.safe;
+      ctx.fillRect(0, sy, W, TILE);
+      ctx.fillStyle = COLORS.safeDark;
+      for (let c = 0; c < COLS; c += 2) {
+        ctx.fillRect(c*TILE+12, sy+6, 5, 9);
+        ctx.fillRect(c*TILE+22, sy+14, 4, 7);
+      }
+      ctx.fillStyle = '#e8538a';
+      for (let c = 1; c < COLS; c += 3) {
+        ctx.beginPath(); ctx.arc(c*TILE+8, sy+10, 3, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    if (row.type === 'road') {
+      ctx.fillStyle = COLORS.road;
+      ctx.fillRect(0, sy, W, TILE);
+      ctx.fillStyle = COLORS.roadLine;
+      for (let x = 0; x < W; x += 40) ctx.fillRect(x, sy+TILE/2-2, 24, 4);
+      for (const car of row.items) {
+        ctx.fillStyle = [COLORS.car1, COLORS.car2, COLORS.car3][Math.floor(Math.abs(car.x/100))%3];
+        ctx.beginPath(); ctx.roundRect(car.x+2, sy+6, car.w-4, TILE-12, 6); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        if (car.speed > 0) ctx.fillRect(car.x+car.w-14, sy+10, 10, TILE-22);
+        else ctx.fillRect(car.x+4, sy+10, 10, TILE-22);
+        ctx.fillStyle = '#8c3a5a';
+        ctx.beginPath(); ctx.arc(car.x+8, sy+TILE-7, 4, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(car.x+car.w-8, sy+TILE-7, 4, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    if (row.type === 'water') {
+      ctx.fillStyle = COLORS.water;
+      ctx.fillRect(0, sy, W, TILE);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      const t = Date.now()/800;
+      for (let x = 0; x < W; x += 30) {
+        ctx.fillRect(x, sy+14+Math.sin(t+x*0.3)*3, 20, 3);
+      }
+      for (const log of row.items) {
+        ctx.fillStyle = COLORS.log;
+        ctx.beginPath(); ctx.roundRect(log.x+1, sy+6, log.w-2, TILE-12, 8); ctx.fill();
+        ctx.fillStyle = COLORS.logGrain;
+        for (let lx = log.x+10; lx < log.x+log.w-6; lx += 12) ctx.fillRect(lx, sy+10, 2, TILE-20);
+      }
+    }
+  }
+
+  drawPlayer();
+
+  if (state === 'dead') {
+    ctx.fillStyle = 'rgba(255,200,220,0.75)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'white';
+    ctx.beginPath(); ctx.roundRect(W/2-160, H/2-70, 320, 145, 16); ctx.fill();
+    ctx.strokeStyle = '#e8538a'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#e8538a';
+    ctx.font = 'bold 36px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('You died!', W/2, H/2-18);
+    ctx.fillStyle = '#6d2a4a'; ctx.font = '20px sans-serif';
+    ctx.fillText('Score: ' + score, W/2, H/2+16);
+    if (deathTimer > 0.6) {
+      ctx.fillStyle = '#b06080'; ctx.font = '15px sans-serif';
+      ctx.fillText('Press any key or tap to restart', W/2, H/2+50);
+    }
+    ctx.textAlign = 'left';
+  }
+}
+
+function drawPlayer() {
+  let t = player.moving ? player.animT : 1;
+  t = 1 - Math.pow(1-t, 3);
+  const px = (player.prevCol + (player.col - player.prevCol)*t) * TILE + TILE/2;
+  const py = (worldToScreen(player.prevWorldY) + (worldToScreen(player.worldY) - worldToScreen(player.prevWorldY))*t) + TILE/2;
+  const hop = player.moving ? Math.sin(player.animT * Math.PI) * 10 : 0;
+  const dead = state === 'dead';
+
+  ctx.fillStyle = 'rgba(180,80,120,0.18)';
+  ctx.beginPath(); ctx.ellipse(px, py+14, 12-hop*0.3, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = dead ? '#ddc0cc' : COLORS.chicken;
+  ctx.beginPath(); ctx.ellipse(px, py-hop, 13, 14, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = dead ? '#c0a0b0' : '#f4a0c0'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  ctx.fillStyle = dead ? '#ddc0cc' : COLORS.chicken;
+  ctx.beginPath(); ctx.arc(px, py-hop-14, 9, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = dead ? '#c0a0b0' : '#f4a0c0'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  if (!dead) {
+    ctx.fillStyle = COLORS.comb;
+    ctx.fillRect(px-3, py-hop-24, 6, 8);
+    ctx.beginPath(); ctx.arc(px, py-hop-23, 4, 0, Math.PI*2); ctx.fill();
+  }
+
+  ctx.fillStyle = '#6d2a4a';
+  ctx.beginPath(); ctx.arc(px+5, py-hop-15, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(px+5.5, py-hop-15.5, 1, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#e8538a';
+  ctx.beginPath();
+  ctx.moveTo(px+9, py-hop-14); ctx.lineTo(px+15, py-hop-12); ctx.lineTo(px+9, py-hop-10);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = dead ? '#d0a0b8' : COLORS.wing;
+  ctx.beginPath(); ctx.ellipse(px-12, py-hop-2, 5, 9, -0.4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+12, py-hop-2, 5, 9, 0.4, 0, Math.PI*2); ctx.fill();
+}
+
+initWorld(); resetPlayer();
+requestAnimationFrame(ts => { last = ts; requestAnimationFrame(update); });
+</script>
+</body>
+</html>
